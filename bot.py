@@ -17,7 +17,7 @@ from telegram.ext import (
 # =====================================================================================
 # 1. CONFIGURATION
 # =====================================================================================
-BOT_TOKEN = "YOUR_NEW_SECRET_BOT_TOKEN_HERE" 
+BOT_TOKEN = "8279192976:AAGuHbODhn70R1zaV8ETk7chWE_HHxdRGYA" 
 ADMIN_ID = 745211839 
 ADMIN_USERNAME = "AnkitRathore"
 
@@ -192,10 +192,9 @@ async def get_pending_withdrawal_count():
 def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("📋 Tasks", callback_data='tasks'), InlineKeyboardButton("👥 Refer & Earn", callback_data='refer')],
-        [InlineKeyboardButton("💰 My Balance", callback_data='balance'), InlineKeyboardButton("🎁 Daily Bonus", callback_data='daily_bonus')],
-        [InlineKeyboardButton(" hourly_bonus.  Hourly Bonus", callback_data='hourly_bonus')],
-        [InlineKeyboardButton("💸 Withdraw", callback_data='withdraw'), InlineKeyboardButton("ℹ️ Help / FAQ", callback_data='help')],
-        [InlineKeyboardButton("✉️ Contact Admin", url=f"https://t.me/{ADMIN_USERNAME}")]
+        [InlineKeyboardButton("💰 My Balance", callback_data='balance'), InlineKeyboardButton("💸 Withdraw", callback_data='withdraw')],
+        [InlineKeyboardButton("🎁 Daily Bonus", callback_data='daily_bonus'), InlineKeyboardButton("⏰ Hourly Bonus", callback_data='hourly_bonus')],
+        [InlineKeyboardButton("ℹ️ Help / FAQ", callback_data='help'), InlineKeyboardButton("✉️ Contact Admin", url=f"https://t.me/{ADMIN_USERNAME}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -266,23 +265,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.callback_query.edit_message_text(text=message_text, reply_markup=reply_markup)
     else:
         await update.message.reply_text(text=message_text, reply_markup=reply_markup)
-
-async def user_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    data = query.data
-    if data == 'main_menu': await show_main_menu(update, context)
-    elif data == 'tasks': await show_tasks(update, context)
-    elif data == 'refer': await show_referral_info(update, context)
-    elif data == 'balance': await show_balance(update, context)
-    elif data == 'help': await show_help(update, context)
-    elif data == 'daily_bonus': await daily_bonus(update, context)
-    elif data == 'hourly_bonus': await hourly_bonus(update, context)
-    elif data.startswith('start_task_'):
-        await start_task_handler(update, context, task_index=int(data.split('_')[-1]))
-    elif data.startswith('claim_task_'):
-        await claim_task(update, context, task_index=int(data.split('_')[-1]))
-    else:
-        await query.answer()
 
 async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -383,30 +365,24 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if query: await query.answer(message_to_user, show_alert=True)
     else: await update.message.reply_text(message_to_user)
 
-# CORRECTED: This function now safely checks if 'last_hourly_claim' exists.
 async def hourly_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     db_user = await get_user(user_id)
     hourly_bonus_amount = context.bot_data['settings']['hourly_bonus']
     now = datetime.now()
     message_to_user = ""
-
-    # Safely check if the key exists in the returned database row
     if 'last_hourly_claim' in db_user.keys() and db_user['last_hourly_claim']:
         last_claim_str = db_user['last_hourly_claim']
         last_claim_time = datetime.fromisoformat(last_claim_str)
         time_since_claim = now - last_claim_time
-        
         if time_since_claim < timedelta(hours=1):
             remaining_time = timedelta(hours=1) - time_since_claim
             minutes_left = math.ceil(remaining_time.total_seconds() / 60)
             message_to_user = f"Please wait {minutes_left} more minutes to claim your next hourly bonus."
-            
     if not message_to_user:
         await update_balance(user_id, hourly_bonus_amount)
         await update_last_hourly_claim(user_id, now)
         message_to_user = f"🎉 You've received your hourly bonus of ₹{hourly_bonus_amount:.2f}!"
-
     if update.callback_query:
         await update.callback_query.answer(message_to_user, show_alert=True)
     else:
@@ -698,7 +674,7 @@ def main() -> None:
     persistence = PicklePersistence(filepath="bot_persistence")
     app = Application.builder().token(BOT_TOKEN).persistence(persistence).post_init(post_init).build()
     
-    # --- Conversation Handlers (Group 0)---
+    # --- Conversation Handlers ---
     withdraw_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_withdrawal, pattern=r'^withdraw$'), CommandHandler('withdraw', start_withdrawal)],
         states={UPI_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_upi_id)]},
