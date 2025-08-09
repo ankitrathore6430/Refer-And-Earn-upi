@@ -13,6 +13,7 @@ from telegram.ext import (
     ConversationHandler, MessageHandler, filters, ContextTypes,
     PicklePersistence
 )
+from urllib.parse import quote_plus
 
 # =====================================================================================
 # 1. CONFIGURATION
@@ -326,13 +327,24 @@ async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
     db_user = await get_user(user_id)
     referral_bonus = context.bot_data['settings']['referral_bonus']
     referral_link = f"https://t.me/{bot_username}?start={user_id}"
-    share_text = f"Hey! I'm using this awesome bot to earn money. 🤑\n\nJoin now using my personal link!\n\n👇 Click here to join 👇\n{referral_link}"
+    
+    # Text content for the shared message
+    share_text_content = f"Hey! I'm earning money with this bot and thought you'd like it too. 💰\n\nIt's free, simple, and you can start right away.\n\nJoin me here 👇\n{referral_link}"
+    
+    # URL-encode the text and create a standard Telegram share link
+    encoded_text = quote_plus(share_text_content)
+    telegram_share_url = f"https://t.me/share/url?text={encoded_text}"
+    
+    # Message displayed to the user in the bot
     message = (f"*👥 Refer & Earn*\n\n"
                f"*Share your personal link with friends. You will earn ₹{referral_bonus:.2f} for every single friend who joins through it!*\n\n"
                f"*Your Link:*\n`{referral_link}`\n\n"
                f"*You have referred {db_user['referral_count']} friends so far.*")
-    keyboard = [[InlineKeyboardButton("🚀 Share with a Friend", switch_inline_query=share_text)], [InlineKeyboardButton("⬅️ Back to Menu", callback_data='main_menu')]]
+               
+    # The keyboard now uses a standard URL button for sharing
+    keyboard = [[InlineKeyboardButton("🚀 Share with a Friend", url=telegram_share_url)], [InlineKeyboardButton("⬅️ Back to Menu", callback_data='main_menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     if update.callback_query: await update.callback_query.edit_message_text(text=message, reply_markup=reply_markup, parse_mode='Markdown')
     else: await update.message.reply_text(text=message, reply_markup=reply_markup, parse_mode='Markdown')
 
@@ -472,11 +484,16 @@ async def list_withdrawal_requests(update: Update, context: ContextTypes.DEFAULT
     requests = await get_withdrawal_requests_paginated(limit=USERS_PER_PAGE, offset=offset)
     total_requests = await get_all_withdrawal_requests_count()
     total_pages = math.ceil(total_requests / USERS_PER_PAGE) if total_requests > 0 else 1
+
+    query = update.callback_query
+    keyboard = [] # Initialize the keyboard
+
     if not requests:
         text = "There are no withdrawal requests."
-        if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=back_to_admin_panel_keyboard())
+        if query: await query.edit_message_text(text, reply_markup=back_to_admin_panel_keyboard())
         else: await update.message.reply_text(text, reply_markup=back_to_admin_panel_keyboard())
         return
+
     message_text = "📋 *Withdrawal Request History*\n\n"
     for req in requests:
         status_icon = "⏳" if req['status'] == 'pending' else ("✅" if req['status'] == 'approved' else "❌")
@@ -486,13 +503,26 @@ async def list_withdrawal_requests(update: Update, context: ContextTypes.DEFAULT
                          f"   - **Amount:** ₹{req['amount']:.2f}\n"
                          f"   - **UPI ID:** `{req['upi_id']}`\n"
                          f"   - **Date:** {timestamp}\n\n")
-    row = []
-    if page > 1: row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"admin_list_requests_{page - 1}"))
-    if total_pages > 1: row.append(InlineKeyboardButton(f"Page {page}/{total_pages}", callback_data="noop"))
-    if page < total_pages: row.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_list_requests_{page + 1}"))
-    keyboard = [row, [InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data='admin_panel')]]
+        
+        # --- NEW FEATURE ---
+        # If the request is pending, add Approve/Reject buttons for it
+        if req['status'] == 'pending':
+            approve_button = InlineKeyboardButton(f"✅ Approve #{req['request_id']}", callback_data=f"admin_approve_{req['request_id']}")
+            reject_button = InlineKeyboardButton(f"❌ Reject #{req['request_id']}", callback_data=f"admin_reject_{req['request_id']}")
+            keyboard.append([approve_button, reject_button])
+
+    # Add pagination buttons
+    pagination_row = []
+    if page > 1: pagination_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"admin_list_requests_{page - 1}"))
+    if total_pages > 1: pagination_row.append(InlineKeyboardButton(f"Page {page}/{total_pages}", callback_data="noop"))
+    if page < total_pages: pagination_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_list_requests_{page + 1}"))
+    if pagination_row: keyboard.append(pagination_row)
+
+    # Add back button
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data='admin_panel')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.callback_query: await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    if query: await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
     else: await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def start_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
